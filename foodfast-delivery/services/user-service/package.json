@@ -1,0 +1,14 @@
+{
+  "name": "user-service",
+  "version": "1.0.0",
+  "description": "User Service for FoodFast Delivery",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "migrate": "node src/database/migrations/createUsersTable.js"
+  },
+  "keywords": ["microservices", "user-service"],
+  "author": "",
+  "license": "ISC"
+}
