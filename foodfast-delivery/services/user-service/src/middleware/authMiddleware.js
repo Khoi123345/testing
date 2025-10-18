@@ -5,33 +5,36 @@ const { verifyToken } = require('../utils/jwt');
  */
 const authenticate = (req, res, next) => {
   try {
-    // Get token from header
+    console.log('🔍 Incoming headers:', req.headers);
+
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.log('🚫 No valid Authorization header');
       return res.status(401).json({
         success: false,
-        message: 'No token provided'
+        message: 'Unauthorized',
       });
     }
 
-    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    // ✅ Khai báo token TRƯỚC khi gọi verifyToken
+    const token = authHeader.split(' ')[1];
+    console.log('🔑 Token received (first 30 chars):', token.slice(0, 30));
 
-    // Verify token
+    // ✅ Gọi verifyToken và gán decoded
     const decoded = verifyToken(token);
+    console.log('✅ Token decoded successfully:', decoded);
 
-    // Attach user info to request
-    req.user = {
-      userId: decoded.userId,
-      email: decoded.email,
-      role: decoded.role
-    };
-
+    // ✅ Gắn decoded info vào req.user để các route khác dùng
+    req.user = decoded;
     next();
+
   } catch (error) {
+    console.error('❌ JWT verification error:', error.message);
+    console.log('🧩 process.env.JWT_SECRET inside container =', process.env.JWT_SECRET);
     return res.status(401).json({
       success: false,
-      message: 'Invalid or expired token'
+      message: 'Invalid or expired token',
     });
   }
 };

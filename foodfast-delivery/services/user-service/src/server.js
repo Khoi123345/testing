@@ -47,22 +47,29 @@ app.use((req, res) => {
 // Error handler (must be last)
 app.use(errorHandler);
 
-// Start server
 const startServer = async () => {
-  try {
-    // Test database connection
-    await pool.query('SELECT NOW()');
-    console.log('✅ Database connection established');
+  const MAX_RETRIES = 10;      // số lần thử lại
+  const RETRY_DELAY = 5000;    // 5 giây giữa mỗi lần thử
 
-    app.listen(PORT, () => {
-      console.log(`🚀 User Service is running on port ${PORT}`);
-      console.log(`📍 API Base URL: http://localhost:${PORT}${API_PREFIX}`);
-      console.log(`🏥 Health Check: http://localhost:${PORT}/health`);
-    });
-  } catch (error) {
-    console.error('❌ Failed to start server:', error);
-    process.exit(1);
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      await pool.query('SELECT NOW()');
+      console.log('✅ Database connection established');
+      
+      app.listen(PORT, () => {
+        console.log(`🚀 User Service is running on port ${PORT}`);
+        console.log(`📍 API Base URL: http://localhost:${PORT}${API_PREFIX}`);
+        console.log(`🏥 Health Check: http://localhost:${PORT}/health`);
+      });
+      return; // ✅ thành công, thoát vòng lặp
+    } catch (error) {
+      console.warn(`⚠️  Database not ready (attempt ${attempt}/${MAX_RETRIES}). Retrying in ${RETRY_DELAY / 1000}s...`);
+      await new Promise(res => setTimeout(res, RETRY_DELAY));
+    }
   }
+
+  console.error('❌ Database connection failed after several retries. Exiting.');
+  process.exit(1);
 };
 
 startServer();
