@@ -1,6 +1,7 @@
 const express = require('express');
 const authController = require('../controllers/authController');
 
+
 const router = express.Router();
 
 /**
@@ -16,5 +17,12 @@ router.post('/register', authController.register.bind(authController));
  * @access  Public
  */
 router.post('/login', authController.login.bind(authController));
+
+/**
+ * @route   POST /api/v1/auth/register-restaurant
+ * @desc    Register restaurant account
+ * @access  Public
+ */
+router.post('/register-restaurant', authController.registerRestaurant.bind(authController));
 
 module.exports = router;

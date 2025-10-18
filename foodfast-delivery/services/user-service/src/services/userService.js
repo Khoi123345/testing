@@ -1,94 +1,152 @@
-const pool = require('../config/database');
 const bcrypt = require('bcrypt');
+const UserRepository = require('../repositories/userRepository'); // Import repository
+const messageBroker = require('../utils/messageBroker'); // Import message broker utility
 
 const SALT_ROUNDS = 10;
 
 class UserService {
+async getAllUsers(filters = {}, page = 1, limit = 10) {
+  const offset = (page - 1) * limit;
+
+  // Gọi repository (đã có sẵn hàm findAllAndCount)
+  const result = await UserRepository.findAllAndCount({
+    limit,
+    offset,
+    filters
+  });
+
+  // Tính tổng số trang
+  const totalPages = Math.ceil(result.totalItems / limit);
+
+  return {
+    users: result.users,
+    totalItems: result.totalItems,
+    currentPage: page,
+    totalPages
+  };
+}
   /**
-   * Create new user
+ * Create restaurant user and publish event
+ */
+async createRestaurantUser(restaurantData) {
+  const { email, password, phone, restaurant_name, restaurant_address } = restaurantData;
+
+  // Check if email already exists
+  const existingUser = await userRepository.existsByEmail(email);
+  if (existingUser) {
+    throw new Error('Email already exists');
+  }
+
+  // Hash password
+  const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
+
+  // Create user with RESTAURANT role and is_active = false
+  const newUser = await userRepository.create({
+    email,
+    password_hash,
+    full_name: restaurant_name,
+    phone,
+    role: 'RESTAURANT',
+    is_active: false
+  });
+
+  // Publish RestaurantUserCreated event với routing key pattern
+  const eventPayload = {
+    eventType: 'RestaurantUserCreated',
+    payload: {
+      userId: newUser.id,
+      email: newUser.email,
+      restaurantName: restaurant_name,
+      restaurantAddress: restaurant_address,
+      phone: newUser.phone,
+      timestamp: new Date().toISOString()
+    }
+  };
+
+  try {
+    // Routing key: 'restaurant.user.created'
+    await messageBroker.publish('restaurant.user.created', eventPayload);
+  } catch (error) {
+    console.error('⚠️  Failed to publish event, but user was created:', error);
+    // User đã được tạo, không throw error để không rollback
+  }
+
+  return {
+    user: newUser,
+    message: 'Restaurant registration submitted successfully. Your account is pending approval.'
+  };
+}
+  /**
+   * Create new user (Business Logic)
    */
   async createUser(userData) {
     const { email, password, full_name, phone, role = 'CUSTOMER' } = userData;
 
-    // Check if user already exists
-    const existingUser = await this.findByEmail(email);
+    // Business Logic: Check if user already exists
+    const existingUser = await UserRepository.findByEmail(email);
     if (existingUser) {
       throw new Error('Email already registered');
     }
 
-    // Hash password
+    // Business Logic: Hash password
     const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
 
-    // Insert user
-    const query = `
-      INSERT INTO users (email, password_hash, full_name, phone, role)
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING id, email, full_name, phone, role, is_active, email_verified, created_at, updated_at
-    `;
+    // Call Repository to save data
+    const newUser = await UserRepository.createUser({
+      email,
+      password_hash,
+      full_name,
+      phone,
+      role,
+    });
 
-    const result = await pool.query(query, [email, password_hash, full_name, phone, role]);
-    return result.rows[0];
+    return newUser;
   }
 
   /**
-   * Find user by email
+   * Find user by email (Pass-through to repository)
    */
   async findByEmail(email) {
-    const query = 'SELECT * FROM users WHERE email = $1';
-    const result = await pool.query(query, [email]);
-    return result.rows[0] || null;
+    return UserRepository.findByEmail(email);
   }
 
   /**
-   * Find user by ID (without password)
+   * Find user by ID (Pass-through to repository)
    */
   async findById(userId) {
-    const query = `
-      SELECT id, email, full_name, phone, role, is_active, email_verified, created_at, updated_at
-      FROM users WHERE id = $1
-    `;
-    const result = await pool.query(query, [userId]);
-    return result.rows[0] || null;
+    return UserRepository.findById(userId);
   }
 
   /**
-   * Update user profile
+   * Update user profile (Business Logic)
    */
   async updateUser(userId, userData) {
-    const { full_name, phone } = userData;
+    // Call repository to update data
+    const updatedUser = await UserRepository.updateUser(userId, userData);
 
-    const query = `
-      UPDATE users
-      SET full_name = COALESCE($1, full_name),
-          phone = COALESCE($2, phone)
-      WHERE id = $3
-      RETURNING id, email, full_name, phone, role, is_active, email_verified, created_at, updated_at
-    `;
-
-    const result = await pool.query(query, [full_name, phone, userId]);
-
-    if (result.rows.length === 0) {
+    // Business Logic: Check if user was found and updated
+    if (!updatedUser) {
       throw new Error('User not found');
     }
 
-    return result.rows[0];
+    return updatedUser;
   }
 
   /**
-   * Verify password
+   * Verify password (Pure Business Logic)
    */
   async verifyPassword(plainPassword, hashedPassword) {
     return bcrypt.compare(plainPassword, hashedPassword);
   }
 
   /**
-   * Soft delete user (set is_active = false)
+   * Soft delete user (Business Logic)
    */
   async deleteUser(userId) {
-    const query = 'UPDATE users SET is_active = false WHERE id = $1';
-    const result = await pool.query(query, [userId]);
+    const rowCount = await UserRepository.deleteUser(userId);
     
-    if (result.rowCount === 0) {
+    // Business Logic: Check if user was found and deleted
+    if (rowCount === 0) {
       throw new Error('User not found');
     }
   }
